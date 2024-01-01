@@ -20,14 +20,15 @@ def train_cv(model, images, labels_df, out_model_path, n_folds=5, batch_size=32,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    all_predictions = []
-    all_features = []
-    all_labels = []
+    # all_predictions = []
+    # all_features = []
+    # all_labels = []
     
     kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
     fold = 0
 
     for train_index, test_index in kf.split(images):
+        # print(train_index, test_index)
         fold += 1
         print(f"fold {fold}")
 
@@ -56,13 +57,16 @@ def train_cv(model, images, labels_df, out_model_path, n_folds=5, batch_size=32,
         #     'label': labels
         # })
         # result_df.to_csv(f"{out_model_path}_results_fold_{fold}.csv", index=False)
-        all_predictions.extend(predictions)
-        all_features.extend(features)
-        all_labels.extend(labels)
+        
+        # all_predictions.extend(predictions)
+        # all_features.extend(features)
+        # all_labels.extend(labels)
     
-    np.save(f"{out_model_path}_all_predictions.npy", np.array(all_predictions))
-    np.save(f"{out_model_path}_all_features.npy", np.array(all_features))
-    np.save(f"{out_model_path}_all_labels.npy", np.array(all_labels))
+        # save memory by saving per fold
+        np.save(f"{out_model_path}_indices_fold_{fold}.npy", np.array(test_index))
+        np.save(f"{out_model_path}_preds_fold_{fold}.npy", np.array(predictions))
+        np.save(f"{out_model_path}_features_fold_{fold}.npy", np.array(features))
+        np.save(f"{out_model_path}_labels_fold_{fold}.npy", np.array(labels))
 
 def train_fold(model, train_loader, device, n_epochs):
     model = copy.deepcopy(model)
@@ -98,6 +102,8 @@ def train_fold(model, train_loader, device, n_epochs):
         epoch_loss = running_loss / len(train_loader)
         epoch_acc = correct / total
         print(f"Training Loss: {epoch_loss:.4f}, Accuracy: {epoch_acc:.4f}")
+
+        torch.cuda.empty_cache()
 
     return model
 
@@ -141,6 +147,8 @@ def evaluate_and_generate_predictions(model, test_loader, device):
     print(f"Loss: {average_loss:.4f}, Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}")
     print(f"Confusion Matrix:\n{cm}")
     print("----------------------------------")
+
+    torch.cuda.empty_cache()
 
     return predictions, embeddings, labels_list
 
