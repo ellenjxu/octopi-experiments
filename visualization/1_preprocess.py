@@ -16,6 +16,7 @@ def get_pos_images(csv_dir, npy_dir, threshold):
     for csv_file in os.listdir(csv_dir):
         if csv_file.endswith('.csv'):
             csv_path = os.path.join(csv_dir, csv_file)
+            csv_name = csv_file.replace('.csv', '')
             np_array = np.load(os.path.join(npy_dir, csv_file.replace('.csv', '.npy')))
             df = pd.read_csv(csv_path)
 
@@ -24,13 +25,15 @@ def get_pos_images(csv_dir, npy_dir, threshold):
 
             # get the corresponding image at the index
             for index in filtered_df['index']:
-                pos_images.append(np_array[index])
+                # tuple: (image, csv)
+                pos_images.append((np_array[index], csv_name)) # save which slide the images came from
 
-    return  pos_images
+    return pos_images
 
 csv_dir = 'model_output/'
 npy_dir = 'npy_v2/'
 threshold = 0.5
 
 pos_images = get_pos_images(csv_dir, npy_dir, threshold)
-np.save('pos_images_thresholded_from_csv.npy', pos_images)
+print(len(pos_images))
+np.save('pos_images_thresholded_with_csv_info.npy', pos_images)
