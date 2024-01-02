@@ -45,9 +45,7 @@ def train_cv(model, images, labels_df, out_model_path, n_folds=5, batch_size=32,
 
         # Model training for the current fold
         model_fold = train_fold(model, train_loader, device, n_epochs)
-
-        # Save the model for the current fold
-        torch.save(model_fold, f"{out_model_path}_{str(time.time())}_fold_{fold}.pt")
+        torch.save(model_fold, f"{out_model_path}_fold_{fold}.pt") # _{str(time.time())}
 
         predictions, features, labels = evaluate_and_generate_predictions(model_fold, test_loader, device)
         # result_df = pd.DataFrame({
@@ -62,11 +60,13 @@ def train_cv(model, images, labels_df, out_model_path, n_folds=5, batch_size=32,
         # all_features.extend(features)
         # all_labels.extend(labels)
     
-        # save memory by saving per fold
         np.save(f"{out_model_path}_indices_fold_{fold}.npy", np.array(test_index))
         np.save(f"{out_model_path}_preds_fold_{fold}.npy", np.array(predictions))
         np.save(f"{out_model_path}_features_fold_{fold}.npy", np.array(features))
         np.save(f"{out_model_path}_labels_fold_{fold}.npy", np.array(labels))
+
+        del train_loader, test_loader, model_fold, test_index, predictions, features, labels  # Delete large variables
+        torch.cuda.empty_cache()
 
 def train_fold(model, train_loader, device, n_epochs):
     model = copy.deepcopy(model)
@@ -161,13 +161,14 @@ label_path = 'tests/data/combined_ann_parasite_and_non-parasite.csv' # path to t
 images = np.load(ims_path)
 labels_df = pd.read_csv(label_path, index_col='index')
 # labels = labels_df['annotation'].values
-# # test with just 100 images
-# images = images[:100,:,:,:]
-# labels_df[:100]
+
+# get subset
+images = images[:200000,:,:,:] # total 820313
+labels_df[:200000]
 print("total images: ", images.shape[0])
 
 # model architecture
-model_specs = {'model_name':'resnet34','n_channels':4,'n_filters':64,'n_classes':2,'kernel_size':3,'stride':1,'padding':1, 'batch_size':32}
+model_specs = {'model_name':'resnet34','n_channels':4,'n_filters':64,'n_classes':2,'kernel_size':3,'stride':1,'padding':1}
 
 n_classes_derived = labels_df['annotation'].nunique() # number of unique annotation classes in dataset
 model = models.ResNet(model=model_specs['model_name'],n_channels=model_specs['n_channels'],n_filters=model_specs['n_filters'], n_classes=n_classes_derived,kernel_size=model_specs['kernel_size'],stride=model_specs['stride'],padding=model_specs['padding'])
@@ -175,5 +176,6 @@ model = models.ResNet(model=model_specs['model_name'],n_channels=model_specs['n_
 # train_frac = 0.7
 n_epochs = 2
 n_folds = 5
+batch_size = 32
 model_out_path = 'tests/cleanlab/outputs/' + model_specs['model_name']
-train_cv(model, images, labels_df, model_out_path, n_folds, model_specs['batch_size'], n_epochs)
+train_cv(model, images, labels_df, model_out_path, n_folds, batch_size, n_epochs)
