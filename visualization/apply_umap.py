@@ -133,6 +133,8 @@ def get_images_from_csv(csv_dir, npy_dir, threshold=0.85):
 
             # get the images
             images = get_images_threshold(csv_path, np_path, threshold)
+            # get random 1000
+            images = random.sample(images, 1000)
             data.extend(images)
             slide_names.extend([csv_file.replace('.csv', '')] * len(images))
 
@@ -151,14 +153,10 @@ threshold = 0.85
 ### for neg and unsure umap
 neg_data = np.load('tests/visualization/negative_unsure 0.5.npy', allow_pickle=True)
 unsure_data = np.load('tests/visualization/unsure_unsure 0.8.npy', allow_pickle=True)
-print(len(neg_data))
-print(len(unsure_data))
-
-# get 1000 random images from each
-# neg_data = np.array(random.sample(list(neg_data), 1000))
 unsure_data = np.array(random.sample(list(unsure_data), 1000))
 
 data = np.concatenate((neg_data, unsure_data), axis=0)
+data = np.array(data)/255.0
 slide_names = np.concatenate((np.array(['negative']*len(neg_data)), np.array(['unsure']*len(unsure_data))), axis=0)
 
 # limit the max number of points
