@@ -1,3 +1,4 @@
+import os
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -94,12 +95,54 @@ model.eval()
 
 n_max = 10000
 
-# read data
-data = np.load('tests/visualization/pos_images_thresholded_from_csv.npy')/255.0
+# get data
+
+csv_dir = 'model_output/'
+npy_dir = 'npy_v2/'
+out_dir = 'tests/visualization/data/'
+threshold = 0.85
+
+def get_images_threshold(csv_path, np_path, threshold):
+    images = []
+
+    np_array = np.load(np_path)
+    df = pd.read_csv(csv_path)
+
+    # threshold for positive parasites
+    filtered_df = df[df['parasite output'] > threshold]
+
+    # get the corresponding image at the index
+    for index in filtered_df['index']:
+        images.append(np_array[index])
+
+    return images
+
+data = []
+slide_names = []
+
+for csv_file in os.listdir(csv_dir):
+    if csv_file.endswith('.csv') and not csv_file.startswith('SBC'):
+        csv_path = os.path.join(csv_dir, csv_file)
+        # out_path = os.path.join(out_dir, csv_file.replace('.csv', '.npy'))
+        np_path = os.path.join(npy_dir, csv_file.replace('.csv', '.npy'))
+
+        # get the images
+        images = get_images_threshold(csv_path, np_path, threshold)
+        data.extend(images)
+        slide_names.extend([csv_file.replace('.csv', '')] * len(images))
+
+# data_with_info = np.load('tests/visualization/pos_images_thresholded_with_csv_info.npy', allow_pickle=True)
+# data = np.array([item[0] for item in data_with_info])/255.0
+# slide_names = np.array([item[1] for item in data_with_info])
+
+data = np.array(data)/255.0
+slide_names = np.array(slide_names)
 
 # limit the max number of points
-sample_indices = np.random.choice(len(data), size=int(n_max), replace=False)
+n_max = min(10000, len(data))
+sample_indices = np.random.choice(len(data), size=n_max, replace=False)
 data = data[sample_indices]
+slide_names = slide_names[sample_indices]
 
 label = np.ones(len(data))
 print('data shape: ', data.shape)
@@ -169,20 +212,28 @@ plt.savefig("umap_" + str(time.time()) + ".png", dpi=300)
 plt.show()
 '''
 
+# Map each unique slide name to a color
+unique_slides = np.unique(slide_names)
+print('unique slides: ', len(unique_slides))
+colors = sns.color_palette("hsv", len(unique_slides))
+color_map = dict(zip(unique_slides, colors))
+
+# Assign colors to each data point based on its slide name
+color_labels = [color_map[slide] for slide in slide_names]
 
 # Apply UMAP
 print('applying UMAP')
 reducer = umap.UMAP(n_components=2)
 embedding = reducer.fit_transform(all_features)
 
-# Visualize the data
-import matplotlib
-# current_palette = matplotlib.colors.hex2color('#86b92e')
-# color_dict = dict({'0-9':'#787878'})
-#sns.scatterplot(x=embedding[:,0], y=embedding[:,1], edgecolor = 'none', hue=all_labels, legend='full', palette='rainbow')
-sns.set(font_scale=1.2)
-# color_dict = dict({0:'#787878'})
-sns.scatterplot(x=embedding[:,0], y=embedding[:,1], edgecolor = 'none', hue=all_labels[:].astype(int), legend='full', s = 5)
-# sns.color_palette("tab10", as_cmap=True)
+# Visualize the data with colors based on slides
+sns.set(font_scale=1)
+plt.figure(figsize=(20, 12))
+for slide, color in color_map.items():
+    indices = [i for i, s in enumerate(slide_names) if s == slide] # get the indices of the images from slide s
+    sns.scatterplot(x=embedding[indices, 0], y=embedding[indices, 1], color=color, label=slide, s=5)
+
+plt.legend(bbox_to_anchor=(1.25, 1), loc=2, borderaxespad=0., fontsize='x-small')
+plt.tight_layout(rect=[0, 0, 1, 0.85])  # left bottom width height
 plt.savefig("tests/visualization/" + "umap_" + str(time.time()) + ".png", dpi=300)
 plt.show()
