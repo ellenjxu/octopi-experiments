@@ -1,3 +1,4 @@
+import os
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -47,6 +48,15 @@ class ResNet(nn.Module):
     def extract_features(self,x):
         x = self.base_model(x)
         return x.view(x.size(0), -1)
+    
+    def extract_early_features(self, x):  # try earlier layer
+        x = self.base_model.conv1(x)
+        x = self.base_model.bn1(x)
+        x = self.base_model.relu(x)
+        x = self.base_model.maxpool(x)
+        x = self.base_model.layer1(x)
+
+        return x.view(x.size(0), -1)
 
     def get_predictions(self,x):
         x = self.base_model(x)
@@ -76,7 +86,7 @@ def get_embeddings(data_loader, model, device):
     with torch.no_grad():
         embeddings = []
         for batch in data_loader:
-            images = batch[0].to(device)
+            images =     batch[0].to(device)
             features = model.get_features(images)
             embeddings.append(features.cpu())
         return torch.cat(embeddings, dim=0)
@@ -90,39 +100,82 @@ model.eval()
 
 # ============================================== #
 # ============================================== #
-data_id = ['parasite', 'negative', 'unsure']
-data = {}
-label = {}
+# data_id = ['parasite', 'negative', 'unsure']
 
 n_max = 10000
 
-# read data
-for i in range(len(data_id)):
+# get data
 
-    print(data_id[i])
+def get_images_threshold(csv_path, np_path, threshold):
+    images = []
 
-    data[i] = np.load('../data/' + data_id[i] + '.npy')/255.0
-    
-    if data_id[i] == 'negative':
-        fraction = 0.15
-        # sample images
-        sample_indices = np.random.choice(len(data[i]), size=int(fraction*len(data[i])), replace=False)
-        # sample_indices = np.sort(sample_indices)
-        data[i] = data[i][sample_indices]
+    np_array = np.load(np_path)
+    df = pd.read_csv(csv_path)
 
-    # limit the max number of points
-    sample_indices = np.random.choice(len(data[i]), size=min(len(data[i]),n_max), replace=False)
-    data[i] = data[i][sample_indices]
+    # threshold for positive parasites
+    filtered_df = df[df['parasite output'] > threshold]
 
-    label[i] = i*np.ones(data[i].shape[0])
-    print(data[i].shape)
+    # get the corresponding image at the index
+    for index in filtered_df['index']:
+        images.append(np_array[index])
 
+    return images
+
+def get_images_from_csv(csv_dir, npy_dir, threshold=0.85):
+    data = []
+    slide_names = []
+
+    for csv_file in os.listdir(csv_dir):
+        if csv_file.endswith('.csv') and not csv_file.startswith('SBC'):
+            csv_path = os.path.join(csv_dir, csv_file)
+            # out_path = os.path.join(out_dir, csv_file.replace('.csv', '.npy'))
+            np_path = os.path.join(npy_dir, csv_file.replace('.csv', '.npy'))
+
+            # get the images
+            images = get_images_threshold(csv_path, np_path, threshold)
+            data.extend(images)
+            slide_names.extend([csv_file.replace('.csv', '')] * len(images))
+
+    return data, slide_names
+
+csv_dir = 'model_output/'
+npy_dir = 'npy_v2/'
+out_dir = 'tests/visualization/data/'
+threshold = 0.85
+
+### for pos umap
+# data, slide_names = get_images_from_csv(csv_dir, npy_dir)
+# data = np.array(data)/255.0
+# slide_names = np.array(slide_names)
+
+### for neg and unsure umap
+neg_data = np.load('tests/visualization/negative_unsure 0.5.npy', allow_pickle=True)
+unsure_data = np.load('tests/visualization/unsure_unsure 0.8.npy', allow_pickle=True)
+print(len(neg_data))
+print(len(unsure_data))
+
+# get 1000 random images from each
+# neg_data = np.array(random.sample(list(neg_data), 1000))
+unsure_data = np.array(random.sample(list(unsure_data), 1000))
+
+data = np.concatenate((neg_data, unsure_data), axis=0)
+slide_names = np.concatenate((np.array(['negative']*len(neg_data)), np.array(['unsure']*len(unsure_data))), axis=0)
+
+# limit the max number of points
+# n_max = min(10000, len(data))
+# sample_indices = np.random.choice(len(data), size=n_max, replace=False)
+# data = data[sample_indices]
+# slide_names = slide_names[sample_indices]
+
+label = np.ones(len(data))
+print('data shape: ', data.shape)
+print('label shape: ', label.shape)
 
 # ============================================== #
 # ============================================== #
 # combine
-X = np.concatenate([data[i] for i in range(len(data_id))],axis=0)
-y = np.concatenate([label[i] for i in range(len(data_id))],axis=0)
+X = data
+y = label
 dataset = TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
 
 batch_size = 1024
@@ -138,6 +191,7 @@ for i, (images, labels) in enumerate(dataloader):
     all_features.append(features)
     all_labels.append(labels.detach().cpu().numpy())
 
+print('features shape: ', features.shape)
 all_features = np.vstack(all_features)
 all_labels = np.hstack(all_labels)
 
@@ -182,20 +236,36 @@ plt.savefig("umap_" + str(time.time()) + ".png", dpi=300)
 plt.show()
 '''
 
+# Map each unique slide name to a color
+unique_slides = np.unique(slide_names)
+print('unique slides: ', len(unique_slides))
+colors = sns.color_palette("hsv", len(unique_slides))
+color_map = dict(zip(unique_slides, colors))
+
+# Assign colors to each data point based on its slide name
+color_labels = [color_map[slide] for slide in slide_names]
 
 # Apply UMAP
 print('applying UMAP')
 reducer = umap.UMAP(n_components=2)
+# reducer = umap.UMAP(n_neighbors=30,
+#                     min_dist=0.1,
+#                     n_components=2,
+#                     metric='euclidean',
+#                     learning_rate=1.0,
+#                     n_epochs=500,
+#                     spread=1.0,
+#                     random_state=42)
 embedding = reducer.fit_transform(all_features)
 
-# Visualize the data
-import matplotlib
-# current_palette = matplotlib.colors.hex2color('#86b92e')
-# color_dict = dict({'0-9':'#787878'})
-#sns.scatterplot(x=embedding[:,0], y=embedding[:,1], edgecolor = 'none', hue=all_labels, legend='full', palette='rainbow')
-sns.set(font_scale=1.2)
-# color_dict = dict({0:'#787878'})
-sns.scatterplot(x=embedding[:,0], y=embedding[:,1], edgecolor = 'none', hue=all_labels[:].astype(int), legend='full', s = 5)
-# sns.color_palette("tab10", as_cmap=True)
-plt.savefig("umap_" + str(time.time()) + ".png", dpi=300)
+# Visualize the data with colors based on slides
+sns.set(font_scale=1)
+plt.figure(figsize=(20, 12))
+for slide, color in color_map.items():
+    indices = [i for i, s in enumerate(slide_names) if s == slide] # get the indices of the images from slide s
+    sns.scatterplot(x=embedding[indices, 0], y=embedding[indices, 1], color=color, label=slide, s=5)
+
+plt.legend(bbox_to_anchor=(1.25, 1), loc=2, borderaxespad=0., fontsize='x-small')
+plt.tight_layout(rect=[0, 0, 1, 0.85])  # left bottom width height
+plt.savefig("tests/visualization/" + "umap_unsure_" + str(time.time()) + ".png", dpi=300)
 plt.show()
