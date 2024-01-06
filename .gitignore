@@ -3,4 +3,5 @@ data/
 *.npy
 *.txt
 *.png
+*.csv
 __pycache__/
